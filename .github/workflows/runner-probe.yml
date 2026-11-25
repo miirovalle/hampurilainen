@@ -1,0 +1,24 @@
+name: runner-probe
+
+# Temporary diagnostic workflow: finds which macOS runner labels this account
+# can actually schedule. Deleted once the IPA workflow has a working label.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/runner-probe.yml"
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-13, macos-14, macos-15, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Report
+        run: |
+          uname -a
+          xcodebuild -version
+          sw_vers
