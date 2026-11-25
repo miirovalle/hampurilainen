@@ -122,5 +122,5 @@ Source/
 tools/        build_loop_library.py, make_icon.py
 Tests/        headless engine tests
 scripts/      build_ipa.sh
-Resources/    AppIcon.png, Info.plist fragment merged into the iOS bundle
+Resources/    AppIcon.png (single 1024pt source for every icon size)
 ```

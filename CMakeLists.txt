@@ -46,13 +46,6 @@ endif()
 
 set(LOOPDECK_LIBRARY_BIN "${CMAKE_BINARY_DIR}/generated/loopdeck_library.bin")
 
-# juceaide parses the merge plist as XML. A UTF-8 BOM makes that parse fail
-# silently, which drops every key in the file, so catch it at configure time.
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Info.plist" LOOPDECK_PLIST_HEAD LIMIT 3 HEX)
-if (LOOPDECK_PLIST_HEAD MATCHES "^efbbbf")
-    message(FATAL_ERROR "Resources/Info.plist must not start with a UTF-8 BOM")
-endif()
-
 execute_process(
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_loop_library.py"
             --input "${CMAKE_CURRENT_SOURCE_DIR}/Loops"
@@ -103,7 +96,6 @@ juce_add_plugin(LoopDeck
     NEEDS_MIDI_OUTPUT TRUE
     AU_MAIN_TYPE kAudioUnitType_MIDIProcessor
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Resources/AppIcon.png"
-    PLIST_TO_MERGE "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Info.plist"
     MICROPHONE_PERMISSION_ENABLED FALSE
     COPY_PLUGIN_AFTER_BUILD ${LOOPDECK_COPY_PLUGIN}
     TARGETED_DEVICE_FAMILY "1,2"
