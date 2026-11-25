@@ -73,14 +73,14 @@ endif()
 
 set(LOOPDECK_PLATFORM_FLAGS)
 
+# The app-sandbox entitlement is macOS-only; adding it to an iOS bundle makes
+# code signing fail against the provisioning profile. iOS apps are sandboxed by
+# the OS already, so iOS needs no entitlements at all here.
 if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     list(APPEND LOOPDECK_PLATFORM_FLAGS
         APP_SANDBOX_ENABLED TRUE
         HARDENED_RUNTIME_ENABLED TRUE
         APP_SANDBOX_FILE_ACCESS_HOME_RO TRUE)
-elseif (CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    list(APPEND LOOPDECK_PLATFORM_FLAGS
-        APP_SANDBOX_ENABLED TRUE)
 endif()
 
 juce_add_plugin(LoopDeck
