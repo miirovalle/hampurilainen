@@ -27,8 +27,8 @@ on:
       runner:
         description: "macOS runner image for the IPA job"
         type: choice
-        options: [macos-13, macos-14, macos-15]
-        default: macos-13
+        options: [macos-14, macos-15, macos-13]
+        default: macos-14
   push:
     branches: [main]
     tags: ["v*"]
@@ -92,7 +92,7 @@ jobs:
 
   build-ipa:
     name: iOS AUv3 IPA
-    runs-on: ${{ inputs.runner || 'macos-13' }}
+    runs-on: ${{ inputs.runner || 'macos-14' }}
     needs: engine-tests
     env:
       SIGNING_CERT_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
