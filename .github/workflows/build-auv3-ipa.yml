@@ -156,7 +156,7 @@ jobs:
           IOS_SIGNING_IDENTITY: ${{ secrets.IOS_SIGNING_IDENTITY }}
           IOS_PROVISIONING_PROFILE_SPECIFIER: ${{ secrets.IOS_PROVISIONING_PROFILE_SPECIFIER }}
           IOS_EXPORT_METHOD: ${{ secrets.IOS_EXPORT_METHOD }}
-          IOS_DEPLOYMENT_TARGET: "15.0"
+          IOS_DEPLOYMENT_TARGET: "17.0"
           IOS_ALLOW_PROVISIONING_UPDATES: "1"
         run: |
           set -euo pipefail

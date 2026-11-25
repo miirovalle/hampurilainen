@@ -51,14 +51,14 @@ cmake --build build --config Release --target LoopDeckTests
 
 ### iOS / AUv3
 
-Needs macOS with Xcode:
+Needs macOS with Xcode. Targets **iPadOS 17.0 / iOS 17.0** and newer.
 
 ```sh
 ./scripts/build_ipa.sh              # -> dist/LoopDeck.ipa (unsigned)
 ```
 
 or set the signing variables documented at the top of the script for a signed
-IPA.
+IPA. `IOS_DEPLOYMENT_TARGET` raises or lowers the minimum OS version.
 
 ## Getting the IPA from GitHub Actions
 
@@ -86,6 +86,8 @@ A wildcard App ID for `com.miiroaudio.loopdeck.*` covers both the app and its
 extension (the appex is `com.miiroaudio.loopdeck.loopdeckAUv3`).
 
 ## Installing on the iPad / iPhone
+
+Requires **iPadOS 17.0 / iOS 17.0** or newer.
 
 1. Download the IPA artifact.
 2. Install with AltStore, Sideloadly, or Xcode (`Window → Devices and Simulators`).

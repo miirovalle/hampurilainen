@@ -13,7 +13,7 @@
 #   ./scripts/build_ipa.sh                 # signed IPA
 #
 # Environment:
-#   IOS_DEPLOYMENT_TARGET   minimum iOS version              (default 15.0)
+#   IOS_DEPLOYMENT_TARGET   minimum iOS version              (default 17.0)
 #   IOS_TEAM_ID             Apple team identifier            (enables signing)
 #   IOS_SIGNING_IDENTITY    codesign identity name
 #   IOS_PROVISIONING_PROFILE_SPECIFIER  profile name installed in the keychain
@@ -29,7 +29,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${ROOT}/build-ios"
 DIST_DIR="${ROOT}/dist"
 IPA_PATH="${1:-${DIST_DIR}/LoopDeck.ipa}"
-DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET:-15.0}"
+DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET:-17.0}"
 APP_NAME="LoopDeck"
 APPEX_NAME="LoopDeck.appex"
 
