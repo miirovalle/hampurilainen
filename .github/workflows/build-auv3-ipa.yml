@@ -1,0 +1,215 @@
+name: Build AUv3 IPA
+
+# Builds the iOS AUv3 MIDI processor (standalone host app + embedded AUv3 app
+# extension) and publishes a ready to install .ipa.
+#
+# Unsigned IPAs work with AltStore / Sideloadly / TrollStore, which sign on
+# install. To get a signed IPA straight out of CI, add these repository secrets:
+#
+#   IOS_CERTIFICATE_BASE64             base64 of a .p12 (Apple Development or Distribution)
+#   IOS_CERTIFICATE_PASSWORD           password of that .p12
+#   IOS_TEAM_ID                        e.g. ABCDE12345
+#   IOS_SIGNING_IDENTITY               e.g. "Apple Distribution: Your Name (ABCDE12345)"
+#   IOS_PROVISIONING_PROFILE_BASE64    base64 of a .mobileprovision (optional)
+#   IOS_PROVISIONING_PROFILE_SPECIFIER the profile's name (optional)
+#   IOS_EXPORT_METHOD                  development | ad-hoc | app-store-connect (optional)
+#
+# Signing only happens when IOS_TEAM_ID is configured.
+
+on:
+  workflow_dispatch:
+    inputs:
+      signing:
+        description: "auto = sign when the secrets exist"
+        type: choice
+        options: [auto, unsigned, signed]
+        default: auto
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths-ignore:
+      - "**/*.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JUCE_TAG: "8.0.15"
+
+jobs:
+  # The engine is platform independent, so running its tests on macOS proves the
+  # code that goes into the iOS build compiles and behaves with the Apple
+  # toolchain before the slower iOS build starts.
+  engine-tests:
+    name: Engine tests
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache JUCE
+        uses: actions/cache@v4
+        with:
+          path: external/JUCE
+          key: juce-${{ env.JUCE_TAG }}
+
+      - name: Fetch JUCE
+        run: |
+          if [ ! -f external/JUCE/CMakeLists.txt ]; then
+            git clone --depth 1 --branch "${JUCE_TAG}" \
+              https://github.com/juce-framework/JUCE external/JUCE
+          fi
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build tests
+        run: cmake --build build --config Release --target LoopDeckTests
+
+      - name: Run tests
+        run: |
+          TEST_BIN="$(find build -type f -name LoopDeckTests -perm -u+x | head -n 1)"
+          test -n "$TEST_BIN" || { echo "::error::test binary not found"; exit 1; }
+          echo "running $TEST_BIN"
+          "$TEST_BIN"
+
+  build-ipa:
+    name: iOS AUv3 IPA
+    runs-on: macos-14
+    needs: engine-tests
+    env:
+      SIGNING_CERT_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+      FORCE_UNSIGNED: ${{ inputs.signing == 'unsigned' }}
+      REQUIRE_SIGNED: ${{ inputs.signing == 'signed' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i iphoneos || true
+          cmake --version | head -n 1
+          python3 --version
+
+      - name: Cache JUCE
+        uses: actions/cache@v4
+        with:
+          path: external/JUCE
+          key: juce-${{ env.JUCE_TAG }}
+
+      - name: Fetch JUCE
+        run: |
+          if [ ! -f external/JUCE/CMakeLists.txt ]; then
+            git clone --depth 1 --branch "${JUCE_TAG}" \
+              https://github.com/juce-framework/JUCE external/JUCE
+          fi
+
+      - name: Import signing certificate
+        if: ${{ env.FORCE_UNSIGNED != 'true' && env.SIGNING_CERT_BASE64 != '' }}
+        env:
+          CERT_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+
+          printf '%s' "$CERT_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+          if [ -n "${PROFILE_BASE64:-}" ]; then
+            printf '%s' "$PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
+            echo "IOS_PROVISIONING_PROFILE_PATH=$RUNNER_TEMP/profile.mobileprovision" >> "$GITHUB_ENV"
+          fi
+
+          echo "Codesigning identities:" >&2
+          security find-identity -v -p codesigning "$KEYCHAIN" >&2
+
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Build IPA
+        env:
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+          IOS_SIGNING_IDENTITY: ${{ secrets.IOS_SIGNING_IDENTITY }}
+          IOS_PROVISIONING_PROFILE_SPECIFIER: ${{ secrets.IOS_PROVISIONING_PROFILE_SPECIFIER }}
+          IOS_EXPORT_METHOD: ${{ secrets.IOS_EXPORT_METHOD }}
+          IOS_DEPLOYMENT_TARGET: "15.0"
+          IOS_ALLOW_PROVISIONING_UPDATES: "1"
+        run: |
+          set -euo pipefail
+
+          if [ "${FORCE_UNSIGNED}" = "true" ]; then
+            echo "Forcing an unsigned build"
+            unset IOS_TEAM_ID
+            unset IOS_SIGNING_IDENTITY
+          elif [ "${REQUIRE_SIGNED}" = "true" ] && [ -z "${IOS_TEAM_ID:-}" ]; then
+            echo "::error::signing was requested but IOS_TEAM_ID is not configured"
+            exit 1
+          fi
+
+          if [ -n "${IOS_TEAM_ID:-}" ]; then
+            echo "SIGNING_MODE=signed" >> "$GITHUB_ENV"
+          else
+            echo "SIGNING_MODE=unsigned" >> "$GITHUB_ENV"
+          fi
+
+          chmod +x scripts/build_ipa.sh
+          scripts/build_ipa.sh "$GITHUB_WORKSPACE/dist/LoopDeck.ipa"
+
+      - name: Verify IPA contents
+        run: |
+          set -euo pipefail
+
+          IPA="dist/LoopDeck.ipa"
+          test -s "$IPA" || { echo "::error::no IPA was produced"; exit 1; }
+          echo "IPA size: $(du -h "$IPA" | cut -f1)"
+
+          CONTENTS="$(unzip -l "$IPA")"
+          echo "$CONTENTS" | head -n 20
+
+          echo "$CONTENTS" | grep -q "Payload/LoopDeck.app/LoopDeck$" \
+            || { echo "::error::the app executable is missing from the IPA"; exit 1; }
+          echo "$CONTENTS" | grep -q "Payload/LoopDeck.app/PlugIns/LoopDeck.appex/" \
+            || { echo "::error::the AUv3 extension is missing from the IPA"; exit 1; }
+
+      - name: Summary
+        run: |
+          {
+            echo "## LoopDeck AUv3 IPA"
+            echo ""
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Signing: **${SIGNING_MODE:-unknown}**"
+            echo ""
+            echo "### Install"
+            echo "1. Download the \`LoopDeck-AUv3\` artifact below."
+            echo "2. Install with AltStore, Sideloadly or Xcode (Window > Devices)."
+            echo "3. Launch LoopDeck once so iOS registers the audio unit."
+            echo ""
+            echo "### Using it"
+            echo "The unit appears as a **MIDI processor** (\`aumi\`) named"
+            echo "**Miiro Audio: LoopDeck** in AUM, Koala, Drambo and any other host"
+            echo "that lists AUv3 MIDI effects. Route its MIDI output to your synth"
+            echo "or drum machine."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: LoopDeck-AUv3-${{ github.sha }}
+          path: dist/LoopDeck.ipa
+          if-no-files-found: error
+          retention-days: 90

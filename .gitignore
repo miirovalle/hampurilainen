@@ -1,0 +1,24 @@
+# Build output
+build/
+build-*/
+dist/
+cmake-build-*/
+DerivedData/
+
+# Generated
+build/generated/
+Resources/AppIcon.icns
+
+# JUCE is fetched by CMake / CI, never committed
+external/
+
+# Editor / OS files
+.vs/
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Python cache
+__pycache__/
+*.pyc
