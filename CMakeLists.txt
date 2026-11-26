@@ -61,14 +61,13 @@ juce_add_binary_data(LoopDeckData SOURCES "${LOOPDECK_LIBRARY_BIN}")
 # ------------------------------------------------------------------------------
 # Plug-in
 # ------------------------------------------------------------------------------
-set(LOOPDECK_FORMATS AUv3 Standalone)
+set(LOOPDECK_FORMATS Standalone VST3)
 
 if (APPLE)
-    set(LOOPDECK_FORMATS Standalone AUv3)
-else()
-    # AUv3 only exists on Apple platforms. Elsewhere the standalone build is
-    # what gets compiled, which is enough to develop and test the engine.
-    set(LOOPDECK_FORMATS Standalone)
+    # AUv3 only exists on Apple platforms, and only the Xcode generator can
+    # produce one. JUCE drops the formats a platform cannot host, so the iOS
+    # configure simply ignores VST3 and keeps AUv3.
+    list(APPEND LOOPDECK_FORMATS AUv3)
 endif()
 
 set(LOOPDECK_PLATFORM_FLAGS)

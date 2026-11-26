@@ -1,17 +1,19 @@
 # LoopDeck
 
-An AUv3 **MIDI processor** that plays every `.mid` loop in this repository and
-sends the notes to external synths and drum machines — hardware or software.
+An **AUv3** (iOS) and **VST3** (Windows / macOS / Linux) **MIDI processor** that
+plays every `.mid` loop in this repository and sends the notes to external synths
+and drum machines — hardware or software.
 
 Everything is one self contained plug-in: 2704 drum and percussion loops
-(116 folders) are packed into the AUv3 binary, so there are no files to import
-and nothing to copy to the device.
+(116 folders) are packed into the binary, so there are no files to import and
+nothing to copy to the device.
 
 ```
 Loops/*.mid  ──►  tools/build_loop_library.py  ──►  one packed blob
                                                         │
                                      CMake + juceaide ───┴──►  LoopDeck.appex (AUv3, aumi)
-                                                               LoopDeck.app    (standalone host)
+                                                               LoopDeck.vst3 (VST3 MIDI effect)
+                                                               LoopDeck.app  (standalone host)
 ```
 
 ## What it does
@@ -31,12 +33,28 @@ Loops/*.mid  ──►  tools/build_loop_library.py  ──►  one packed blob
 
 The plug-in is a CMake project (JUCE 8.0.15, fetched automatically).
 
-### Desktop (fast iteration, VST3-style standalone on Windows/macOS/Linux)
+### Desktop (Windows / macOS / Linux)
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+# Standalone host, for fast iteration
 cmake --build build --config Release --target LoopDeck_Standalone
+
+# VST3 MIDI effect
+cmake --build build --config Release --target LoopDeck_VST3
 ```
+
+The VST3 bundle lands in
+`build/LoopDeck_artefacts/Release/VST3/LoopDeck.vst3`. Copy it to
+`C:\Program Files\Common Files\VST3` (Windows),
+`~/Library/Audio/Plug-Ins/VST3` (macOS) or `~/.vst3` (Linux).
+
+A VST3 MIDI effect has **no audio buses** (the same layout the AUv3 uses), so
+the host has to support audio-less MIDI inserts. Reaper, Bitwig, Cubase and
+Studio One do: insert LoopDeck before the instrument and route its MIDI output
+onwards. Hosts that require an audio bus — Ableton Live, for instance — will not
+load it.
 
 ### Engine tests
 
@@ -60,10 +78,26 @@ Needs macOS with Xcode. Targets **iPadOS 17.0 / iOS 17.0** and newer.
 or set the signing variables documented at the top of the script for a signed
 IPA. `IOS_DEPLOYMENT_TARGET` raises or lowers the minimum OS version.
 
+## Getting the VST3 from GitHub Actions
+
+[`.github/workflows/build-vst3.yml`](.github/workflows/build-vst3.yml) builds the
+VST3 on `windows-latest`, `macos-15` (universal arm64 + x86_64) and
+`ubuntu-latest`, and uploads one zip per platform:
+
+| Artifact | Contents |
+| --- | --- |
+| `LoopDeck-VST3-windows-x64-<sha>` | `LoopDeck.vst3` (`Contents/x86_64-win`) |
+| `LoopDeck-VST3-macos-universal-<sha>` | `LoopDeck.vst3` (universal) |
+| `LoopDeck-VST3-linux-x64-<sha>` | `LoopDeck.vst3` (`Contents/x86_64-linux`) |
+
+It runs on a push to `main`, on a `v*` tag, or from
+**Actions → Build VST3 → Run workflow**. The job fails if the bundle binary or
+its `Contents/Resources/moduleinfo.json` manifest is missing.
+
 ## Getting the IPA from GitHub Actions
 
 [`.github/workflows/build-auv3-ipa.yml`](.github/workflows/build-auv3-ipa.yml)
-builds the IPA on `macos-14` and uploads it as the `LoopDeck-AUv3-<sha>`
+builds the IPA on `macos-15` and uploads it as the `LoopDeck-AUv3-<sha>`
 artifact. It runs on a push to `main`, on a `v*` tag, or from
 **Actions → Build AUv3 IPA → Run workflow**.
 
@@ -123,4 +157,5 @@ tools/        build_loop_library.py, make_icon.py
 Tests/        headless engine tests
 scripts/      build_ipa.sh
 Resources/    AppIcon.png (single 1024pt source for every icon size)
+.github/      workflows: build-vst3.yml, build-auv3-ipa.yml
 ```

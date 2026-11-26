@@ -1,0 +1,184 @@
+name: Build VST3
+
+# Builds the LoopDeck VST3 MIDI effect for Windows, macOS and Linux and uploads
+# one zipped .vst3 bundle per platform.
+#
+# Runs on a push to main, on a v* tag, or from Actions -> Build VST3 -> Run
+# workflow. The iOS build lives in build-auv3-ipa.yml.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths-ignore:
+      - "**/*.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JUCE_TAG: "8.0.15"
+
+jobs:
+  vst3:
+    name: VST3 (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-latest
+            artifact: LoopDeck-VST3-windows-x64
+            bundle_binary: Contents/x86_64-win/LoopDeck.vst3
+          - name: macOS universal
+            os: macos-15
+            artifact: LoopDeck-VST3-macos-universal
+            bundle_binary: Contents/MacOS/LoopDeck
+            archs: "arm64;x86_64"
+          - name: Linux x64
+            os: ubuntu-latest
+            artifact: LoopDeck-VST3-linux-x64
+            bundle_binary: Contents/x86_64-linux/LoopDeck.so
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build build-essential pkg-config \
+            libasound2-dev libfreetype-dev libfontconfig1-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev libgl1-mesa-dev
+
+      - name: Show toolchain
+        shell: bash
+        run: |
+          cmake --version | head -n 1
+          python3 --version || python --version
+
+      - name: Cache JUCE
+        uses: actions/cache@v4
+        with:
+          path: external/JUCE
+          key: juce-${{ env.JUCE_TAG }}
+
+      - name: Fetch JUCE
+        shell: bash
+        run: |
+          if [ ! -f external/JUCE/CMakeLists.txt ]; then
+            git clone --depth 1 --branch "${JUCE_TAG}" \
+              https://github.com/juce-framework/JUCE external/JUCE
+          fi
+
+      - name: Configure
+        shell: bash
+        env:
+          ARCHS: ${{ matrix.archs }}
+        run: |
+          set -euo pipefail
+
+          args=(-S . -B build -DLOOPDECK_BUILD_TESTS=OFF)
+
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            args+=(-A x64)
+          else
+            args+=(-DCMAKE_BUILD_TYPE=Release)
+          fi
+
+          if [ -n "${ARCHS:-}" ]; then
+            args+=(-DCMAKE_OSX_ARCHITECTURES="${ARCHS}")
+          fi
+
+          cmake "${args[@]}"
+
+      - name: Build VST3
+        shell: bash
+        run: cmake --build build --config Release --target LoopDeck_VST3
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Multi-config generators create an empty bundle per configuration, so
+          # pick the one that actually contains the built plug-in binary.
+          BINARY="${{ matrix.bundle_binary }}"
+          BUNDLE=""
+
+          while IFS= read -r candidate; do
+            if [ -f "${candidate}/${BINARY}" ]; then
+              BUNDLE="$candidate"
+              break
+            fi
+          done < <(find build -type d -name 'LoopDeck.vst3' -not -path '*CMakeFiles*')
+
+          if [ -z "$BUNDLE" ]; then
+            echo "::error::no LoopDeck.vst3 bundle containing ${BINARY} was produced"
+            find build -maxdepth 6 -name 'LoopDeck.vst3'
+            exit 1
+          fi
+
+          echo "Bundle: $BUNDLE"
+          ls -la "$BUNDLE"
+
+          MANIFEST="$BUNDLE/Contents/Resources/moduleinfo.json"
+          test -f "$MANIFEST" \
+            || { echo "::error::missing Contents/Resources/moduleinfo.json (the VST3 manifest step did not run)"; exit 1; }
+
+          grep -q '"Name": "LoopDeck"' "$MANIFEST" \
+            || { echo "::error::the module manifest does not describe the LoopDeck class"; exit 1; }
+
+          echo "--- moduleinfo.json ---"
+          cat "$MANIFEST"
+
+          mkdir -p dist
+          cp -R "$BUNDLE" "dist/LoopDeck.vst3"
+
+          # bsdtar writes a spec-compliant zip; Compress-Archive stores
+          # backslash separators that other platforms cannot unpack.
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            tar -a -c -f "${{ matrix.artifact }}.zip" -C dist LoopDeck.vst3
+          else
+            ( cd dist && zip -qry "../${{ matrix.artifact }}.zip" LoopDeck.vst3 )
+          fi
+
+          ls -lh "${{ matrix.artifact }}.zip"
+
+      - name: Summary
+        shell: bash
+        env:
+          MODULE_INFO: ${{ matrix.bundle_binary }}
+        run: |
+          {
+            echo "## LoopDeck VST3 (${{ matrix.name }})"
+            echo ""
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Bundle binary: \`${MODULE_INFO}\`"
+            echo ""
+            echo "### Install"
+            echo "Unzip and copy \`LoopDeck.vst3\` to:"
+            echo ""
+            echo "- **Windows:** \`C:\\\\Program Files\\\\Common Files\\\\VST3\`"
+            echo "- **macOS:** \`~/Library/Audio/Plug-Ins/VST3\`"
+            echo "- **Linux:** \`~/.vst3\`"
+            echo ""
+            echo "In your DAW it appears as a **MIDI effect** named"
+            echo "**Miiro Audio: LoopDeck** — insert it before your synth or drum"
+            echo "machine and route its MIDI output to the instrument."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-${{ github.sha }}
+          path: ${{ matrix.artifact }}.zip
+          if-no-files-found: error
+          retention-days: 90
